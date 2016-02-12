@@ -28,6 +28,7 @@ for (i in 1:length(dataTest$Cabin)){
   if (dataTest$Cabin[i]=="") dataTest$Cabin[i]="H"
 }
 
+
 # set.seed(1000)
 # train_index=sample(seq(nrow(dataTrain)),418,replace=FALSE)
 # train=dataTrain[train_index,]
@@ -39,18 +40,21 @@ spl = sample.split(dataTrain$Survived, SplitRatio = 0.8)
 train = subset(dataTrain, spl==TRUE)
 test = subset(dataTrain, spl==FALSE)
 
+train$Cabin[271]="H"
+
 # logistic Regression model
 train$Survived<-as.factor(train$Survived)
 test$Survived<-as.factor(test$Survived)
 fol=formula(Survived~Pclass+Sex+Fare)
 fol2=formula(Survived~Pclass+Sex+Fare+Age)
-glm.fit=glm(fol2,data=train,family=binomial)
+fol4=formula(Survived~Pclass+Sex+Fare+Age+Cabin+SibSp+Parch)
+glm.fit=glm(fol4,data=train,family=binomial)
 glm.probs<- predict(glm.fit, newdata = test, type = "response")
 
 
 maxThreshold<-0
 glm.accMax<-0
-thresholds<-seq(.5, .9, length.out=50 )
+thresholds<-seq(.2, .9, length.out=50 )
 glm.acc=rep(0,length(thresholds))
 for (i in 1:length(thresholds)){
     glm.pred=rep(0,length(test$Survived))
@@ -83,7 +87,8 @@ library(rpart.plot)
 fol1=formula(Survived~Pclass+Sex+Fare)
 fol2=formula(Survived~Pclass+Sex+Fare+Age) # Age na rows removed
 fol3=formula(Survived~Pclass+Sex+Fare+Age+Cabin) # Age na rows removed
-CARTmodel <- rpart(fol3, method="class", data=train)
+fol4=formula(Survived~Pclass+Sex+Fare+Age+Cabin+SibSp+Parch) # Age na rows removed
+CARTmodel <- rpart(fol4, method="class", data=train)
 print(CARTmodel)
 prp(CARTmodel)
 
@@ -95,8 +100,55 @@ sum(PredictCARTmodel==test$Survived)/nrow(test)
 CART.pred<-predict(CARTmodel, newdata = dataTest, type = "class")
 submission<-data.frame(dataTest$PassengerId,as.numeric(CART.pred)-1)
 names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/cart3_impute.csv",sep=",",row.names=FALSE)
+write.table(submission,"./submissions/cart4_impute.csv",sep=",",row.names=FALSE)
 
+# CART with cross validation
+## SELECTING CP BY CROSS-VALIDATION
+
+#4.1
+library(lattice)
+library(ggplot2)
+library(rpart)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(e1071)
+
+# Number of folds
+set.seed(2)
+tr.control = trainControl(method = "cv", number = 10)
+
+#Test cp values from 0.002 to 0.1 in 0.002 increments
+cartGrid = expand.grid( .cp = seq(0.001,0.1,0.001))
+
+# Cross-validation
+train$Survived<-as.factor(train$Survived)
+test$Survived<-as.factor(test$Survived)
+fol4=formula(Survived~Pclass+Sex+Fare+Age+Cabin+SibSp+Parch) # Age na rows removed
+fol5=formula(Survived~Pclass+Sex+Fare+Age+Cabin+Ticket) # Age na rows removed
+tr = train(fol5, data = train, method = "rpart", trControl = tr.control, tuneGrid = cartGrid)
+tr
+
+# Extract tree
+best.tree = tr$finalModel
+prp(best.tree)
+
+# fit CART model with optimal cp = 0.006
+library(rpart)
+library(rpart.plot)
+
+CARTcp = rpart(fol5, data=train, method="class",cp=0.006)
+prp(CARTcp)
+
+# 2.4 accuracy
+PredictCARTcp = predict(CARTcp, newdata = test, type = "class")
+sum(PredictCARTcp==test$Survived)/nrow(test)
+
+#submit
+PredictCARTcp<-predict(CARTcp, newdata = dataTest, type = "class")
+submission<-data.frame(dataTest$PassengerId,as.numeric(PredictCARTcp)-1)
+names(submission)<-c("PassengerId","Survived")
+write.table(submission,"./submissions/cart4_impute_cv.csv",sep=",",row.names=FALSE)
 
 # Random forest model
 library(randomForest)
@@ -106,16 +158,18 @@ library(tree)
 library(randomForest)
 train$Survived<-as.factor(train$Survived)
 test$Survived<-as.factor(test$Survived)
+train$Cabin<-as.factor(train$Cabin)
+test$Cabin<-as.factor(test$Cabin)
 fol2<-formula(Survived~Pclass+Sex+Fare+Age)
 fol3<-formula(Survived~Pclass+Sex+Fare+Age+Cabin)
-forestmodel<-randomForest(fol3, data=train)
+forestmodel<-randomForest(fol2, data=train)
 
 rf.probs = predict(forestmodel, newdata = test)
 sum(rf.probs==test$Survived)/nrow(test)
 importance(forestmodel)
 
 #submit
-
+dataTest$Cabin<-as.factor(dataTest$Cabin)
 rf.pred<-predict(forestmodel, newdata = dataTest)
 submission<-data.frame(dataTest$PassengerId,as.numeric(rf.pred)-1)
 names(submission)<-c("PassengerId","Survived")
