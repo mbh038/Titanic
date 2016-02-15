@@ -10,145 +10,185 @@ mbh<-function(){
   #str(dataTrain)
   #summary(dataTrain)
   
-   dataTrain<-dataTrain[complete.cases(dataTrain),]
-  # impute na to median
-  dataTrain$Age[is.na(dataTrain$Age)] =median(dataTrain$Age, na.rm=TRUE)
-  dataTest$Age[is.na(dataTest$Age)] =median(dataTest$Age, na.rm=TRUE)
-  dataTest$Fare[is.na(dataTest$Fare)] =median(dataTest$Fare, na.rm=TRUE)
+  dataTest$Survived <- NA
+  combi <- rbind(dataTrain, dataTest)
   
-  dataTest$Cabin<-as.factor(dataTest$Cabin)
-  dataTrain$Cabin<-as.factor(dataTrain$Cabin)
+  summary(combi)
+  summary(combi$Embarked)
+  combi$Embarked[which(combi$Embarked == '')]<-"S"
+  summary(combi$Embarked)
+  combi$Embarked <- factor(combi$Embarked)
+  summary(combi$Embarked)
   
-  dataTrain$Cabin<-as.character(dataTrain$Cabin)
-  dataTrain$Cabin<-substr(dataTrain$Cabin, 1, 1)
-  #dataTrain$Cabin<-as.factor(dataTrain$Cabin)
+  # make title variable
+  combi$Name <- as.character(combi$Name)
+  #strsplit(combi$Name[1], split='[,.]')[[1]][2]
+  combi$Title <- sapply(combi$Name, FUN=function(x) {strsplit(x, split='[,.]')[[1]][2]})
+  combi$Title <- sub(' ', '', combi$Title)
+  table(combi$Title)
+  combi$Title[combi$Title %in% c('Mme', 'Mlle','Ms')] <- 'Mlle'
+  combi$Title[combi$Title %in% c('Capt', 'Don', 'Major', 'Sir','Jonkheer')] <- 'Sir'
+  combi$Title[combi$Title %in% c('Dona', 'Lady', 'the Countess')] <- 'Lady'
+  table(combi$Title)
+  combi$Title<-factor(combi$Title)
   
-  for (i in 1:length(dataTrain$Cabin)){
-    if (dataTrain$Cabin[i]=="") dataTrain$Cabin[i]="H"
+  # make family size variable
+  combi$FamilySize <- combi$SibSp + combi$Parch + 1
+  
+  # make familyID variable
+  combi$Surname <- sapply(combi$Name, FUN=function(x) {strsplit(x, split='[,.]')[[1]][1]})
+  combi$FamilyID <- paste(as.character(combi$FamilySize), combi$Surname, sep="")
+  combi$FamilyID[combi$FamilySize <= 2] <- 'Small'
+  famIDs <- data.frame(table(combi$FamilyID))
+  famIDs <- famIDs[famIDs$Freq <= 2,]
+  combi$FamilyID[combi$FamilyID %in% famIDs$Var1] <- 'Small'
+  combi$FamilyID <- factor(combi$FamilyID)
+  table(combi$FamilyID)
+  
+  # reduce levels
+  combi$FamilyID2 <- combi$FamilyID
+  combi$FamilyID2 <- as.character(combi$FamilyID2)
+  combi$FamilyID2[combi$FamilySize <= 3] <- 'Small'
+  combi$FamilyID2 <- factor(combi$FamilyID2)
+  
+  
+  # make cabin variable
+  cabins<-function(x){
+      cabinLevels<-c("A","B","C","D","E","F","G","H","T")
+      x<-as.character(x)
+      x<-substr(x, 1, 1)
+      x[x==""] <- "H"
+      newX<-as.factor(x)
+      levels(newX)<-cabinLevels
+      invisible(newX)
   }
   
+  combi$Cabin<-cabins(combi$Cabin)
   
-  dataTest$Cabin<-as.character(dataTest$Cabin)
-  dataTest$Cabin<-substr(dataTest$Cabin, 1, 1)
-  #dataTest$Cabin<-as.factor(dataTest$Cabin)
+  #normalise age variable
+  combi$Age<-(combi$Age-mean(combi$Age,na.rm=TRUE))/sd(combi$Age,na.rm=TRUE)
   
-  for (i in 1:length(dataTest$Cabin)){
-    if (dataTest$Cabin[i]=="") dataTest$Cabin[i]="H"
-    if (dataTest$Cabin[i]=="G") dataTest$Cabin[i]="H"
-  }
-
+  library(rpart)
+  # impute missing age values
+  Agefit <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title + FamilySize,
+                data=combi[!is.na(combi$Age),], method="anova")
+  combi$Age[is.na(combi$Age)] <- predict(Agefit, combi[is.na(combi$Age),])
+  summary(combi$Age)
   
-  # set.seed(1000)
-  # train_index=sample(seq(nrow(dataTrain)),418,replace=FALSE)
-  # train=dataTrain[train_index,]
-  # test=dataTrain[-train_index,]
+  # impute missing fare value
+  Farefit <- rpart(Fare ~ Pclass + Sex + SibSp + Parch + Embarked + Title + FamilySize,
+                   data=combi[!is.na(combi$Fare),], method="anova")
+  combi$Fare[is.na(combi$Fare)] <- predict(Farefit, combi[is.na(combi$Fare),])
+  summary(combi$Fare)
   
+  Farefit <- rpart(Fare ~ Pclass + Sex + SibSp + Parch + Embarked + Title + FamilySize,
+                  data=combi[combi$Fare!=0,], method="anova")
+  combi$Fare[combi$Fare==0] <- predict(Farefit, combi[combi$Fare==0,])
+  summary(combi$Fare)
+  
+  
+  #transform fare values
+  combi$Fare<-log(combi$Fare)
+  hist(combi$Fare)
+  summary(combi$Fare)
+  
+  dataTrain <- combi[1:891,]
+  dataTest <- combi[892:1309,]
+  
+  table(dataTrain$Cabin)
+  table(dataTest$Cabin)
   
   library(caTools)
   set.seed(1000)
-  spl = sample.split(dataTrain$Survived, SplitRatio = 0.5)
+  spl = sample.split(dataTrain$Survived, SplitRatio = 0.8)
   train = subset(dataTrain, spl==TRUE)
   test = subset(dataTrain, spl==FALSE)
+  table(train$Cabin)
+  table(test$Cabin)
   
-  train$Cabin[271]="H"
-  dataTest$Cabin[118]="H"
-  
+#   sex="female"
 #   # train on one gender at a time
-#   train<-subset(train,Sex=="male")
+#   train<-subset(train,Sex==sex)
 #   #train$Sex<-factor(train$Sex)
-#   test<-subset(test,Sex=="male")
+#   test<-subset(test,Sex==sex)
 #   #test$Sex<-factor(test$Sex)
-#   dataTest<-subset(dataTest,Sex=="male")
+#   dataTest<-subset(dataTest,Sex==sex)
 #   #dataTest$Sex<-factor(dataTest$Sex)
 
-  train$Survived<-as.factor(train$Survived)
-  test$Survived<-as.factor(test$Survived)
-  #train$Cabin<-as.factor(train$Cabin)
-  #test$Cabin<-as.factor(test$Cabin)
-  #train$Cabin<-factor(train$Cabin)
-  #test$Cabin<-factor(test$Cabin)
-  #levels(test$Cabin) <- levels(train$Cabin)
+  #train$Survived<-as.factor(train$Survived)
+  #test$Survived<-as.factor(test$Survived)
+#   train$Cabin<-as.factor(train$Cabin)
+#   test$Cabin<-as.factor(test$Cabin)
+#   train$Cabin<-factor(train$Cabin)
+#   test$Cabin<-factor(test$Cabin)
+#   levels(test$Cabin) <- levels(train$Cabin)
   
 ## Models
 
 model<-function(x){
-md=list(5)  
-md[[1]]<-as.formula("Survived~Pclass+Fare")
-md[[2]]<-as.formula("Survived~Pclass+Fare+Age")
-md[[3]]<-as.formula("Survived~Pclass+Fare+Age+SibSp+Parch") # Age na rows removed
-md[[4]]<-as.formula("Survived~Pclass+Fare+Age")
-md[[5]]<-as.formula("Survived~Pclass+Fare+Age+SibSp+Parch+Ticket")
+md=list(8)  
+md[[1]]<-c(as.formula("as.factor(Survived)~Sex+Pclass"),2)
+md[[2]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare"),3)
+md[[3]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age"),4)
+md[[4]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+SibSp+Parch"),6) # Age na rows removed
+md[[5]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+Title +FamilyID2+FamilySize +Cabin"),8)
+md[[6]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID"),10)
+md[[7]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID+Cabin"),11)
+md[[8]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age +Fare + Embarked + Title + FamilySize + FamilyID+Cabin"),9)
 md[[x]]
 }
 
 
 
-# logistic Regression model
+## LOGISTIC REGRESSION MODEL
 
-for (j in 1:4){
-#Tstart()
-train$Survived<-as.factor(train$Survived)
-test$Survived<-as.factor(test$Survived)
+# Number of folds
+set.seed(2)
+tr.control = trainControl(method = "cv", number = 10)
+#Test cp values from 0.002 to 0.1 in 0.002 increments
+cartGrid = expand.grid( .cp = seq(0.001,0.1,0.001))
 
-glm.fit=glm(model(j),data=train,family=binomial)
-glm.probs<- predict(glm.fit, newdata = test, type = "response")
+for (j in 1:8){
 
-# find optimum threshold
-maxThreshold<-0
-glm.accMax<-0
-thresholds<-seq(.2, .9, length.out=50 )
-glm.acc=rep(0,length(thresholds))
-for (i in 1:length(thresholds)){
-    glm.pred=rep(0,length(test$Survived))
-    glm.pred[glm.probs>thresholds[i]]=1
-    glm.acc[i]<-sum(glm.pred==test$Survived)/nrow(test)
-    if (glm.acc[i] > glm.accMax) {
-        glm.accMax = glm.acc[i]
-        maxThreshold=thresholds[i]
+    glm.fit=glm(model(j)[[1]],data=train,family=binomial)
+    #levels(train$FamilyID)<-levels(train$FamilyID)
+    glm.probs<- predict(glm.fit, newdata = test, type = "response")
+    
+    # find optimum threshold
+    maxThreshold<-0
+    glm.accMax<-0
+    thresholds<-seq(.2, .9, length.out=50 )
+    glm.acc=rep(0,length(thresholds))
+    for (i in 1:length(thresholds)){
+        glm.pred=rep(0,length(test$Survived))
+        glm.pred[glm.probs>thresholds[i]]=1
+        glm.acc[i]<-sum(glm.pred==test$Survived)/nrow(test)
+        if (glm.acc[i] > glm.accMax) {
+            glm.accMax = glm.acc[i]
+            maxThreshold=thresholds[i]
+        }
     }
-}
-plot(thresholds,glm.acc)
-glm.pred=rep(0,length(test$Survived))
-glm.pred[glm.probs>maxThreshold]=1
-print (sum(glm.pred==test$Survived)/nrow(test))
+    plot(thresholds,glm.acc)
+    glm.pred=rep(0,length(test$Survived))
+    glm.pred[glm.probs>maxThreshold]=1
+    print (paste(round(maxThreshold,3)," ",sum(glm.pred==test$Survived)/nrow(test)))
 }
 
+
+glm.fit=glm(model(8)[[1]],data=dataTrain,family=binomial)
 glm.probs<- predict(glm.fit, newdata = dataTest, type = "response")
 glm.pred=rep(0,nrow(dataTest))
-glm.pred[glm.probs>maxThreshold]=1
+glm.pred[glm.probs>0.44]=1
 
 submission<-data.frame(dataTest$PassengerId,glm.pred)
 names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/glm2_imputed.csv",sep=",",row.names=FALSE)
-
-# Decision tree using CART
+write.table(submission,"./submissions/glm8.csv",sep=",",row.names=FALSE)
 
 
-library(rpart)
-library(rpart)
-library(rpart.plot)
 
-for (i in 1:5){
-#Tstart()
-CARTmodel <- rpart(model(i), method="class", data=train)
-#print(CARTmodel)
-prp(CARTmodel)
+## CART with cross validation
+## Selecting Cp by cross-validation
 
-#accuracy of CART model on test set
-PredictCARTmodel = predict(CARTmodel, newdata = test, type = "class")
-print (sum(PredictCARTmodel==test$Survived)/nrow(test))
-}
-
-#submit
-CART.pred<-predict(CARTmodel, newdata = dataTest, type = "class")
-submission<-data.frame(dataTest$PassengerId,as.numeric(CART.pred)-1)
-names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/cart3_impute.csv",sep=",",row.names=FALSE)
-
-# CART with cross validation
-## SELECTING CP BY CROSS-VALIDATION
-
-#4.1
 library(lattice)
 library(ggplot2)
 library(rpart)
@@ -160,48 +200,44 @@ library(e1071)
 # Number of folds
 set.seed(2)
 tr.control = trainControl(method = "cv", number = 10)
-
 #Test cp values from 0.002 to 0.1 in 0.002 increments
-cartGrid = expand.grid( .cp = seq(0.001,0.1,0.001))
+cartGrid = expand.grid( .cp = seq(0.001,0.01,0.0001))
 
 # Cross-validation
 #start()
-train$Survived<-as.factor(train$Survived)
-test$Survived<-as.factor(test$Survived)
-tr = train(fol5, data = train, method = "rpart", trControl = tr.control, tuneGrid = cartGrid)
-tr
-
-# Extract tree
-best.tree = tr$finalModel
-prp(best.tree)
-
-# fit CART model with optimal cp = 0.006
-library(rpart)
-library(rpart.plot)
-train$Survived<-as.factor(train$Survived)
-test$Survived<-as.factor(test$Survived)
-
-for (i in 1:5){
-#Tstart()
-CARTcp = rpart(model(i), data=train, method="class",cp=0.006)
-prp(CARTcp)
-
-# 2.4 accuracy
-
-PredictCARTcp = predict(CARTcp, newdata = test, type = "class")
-print (sum(PredictCARTcp==test$Survived)/nrow(test))
+bestCp<-vector()
+for (i in 1:8){
+    set.seed(2)
+    tr = train(model(i)[[1]], data = dataTrain, method = "rpart", trControl = tr.control, tuneGrid = cartGrid)
+    tr
+    # Extract tree
+    best.tree = tr$finalModel
+    prp(best.tree)
+    bestCp[i]=tr$results$cp[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
+    print (paste("Model: ",i,"Cp: ",bestCp[i],"accuracy: ",max(tr$results$Accuracy),sep=" "))
+    set.seed(2)
+    CARTcp = rpart(model(i)[[1]], data=dataTrain, method="class",cp=bestCp[i])
+    prp(CARTcp)
+    
+    # 2.4 accuracy
+    
+#     PredictCARTcp = predict(CARTcp, newdata = test, type = "class")
+#     acc<-sum(PredictCARTcp==test$Survived)/nrow(test)
+#     print (acc)
+#     if (acc > accbest){
+#         accbest=acc
+#         ibest =i
+#     }    
 }
-
-CARTcp = rpart(model(2), data=train, method="class",cp=0.006)
+set.seed(2)
+CARTcp = rpart(model(8)[[1]], data=dataTrain, method="class",cp=0.0082)
 prp(CARTcp)
-PredictCARTcp = predict(CARTcp, newdata = test, type = "class")
-print (sum(PredictCARTcp==test$Survived)/nrow(test))
-
+set.seed(2)
 #submit
 PredictCARTcp<-predict(CARTcp, newdata = dataTest, type = "class")
 submission<-data.frame(dataTest$PassengerId,as.numeric(PredictCARTcp)-1)
 names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/cart2_impute_cv.csv",sep=",",row.names=FALSE)
+write.table(submission,"./submissions/cart8_cv.csv",sep=",",row.names=FALSE)
 
 # Random forest model
 
@@ -209,65 +245,105 @@ library(randomForest)
 library(caret)
 library(rpart)
 library(tree)
-library(randomForest)
-accbest=0
-ibest=0
-for (i in 1:4){
-#Tstart()
-train$Survived<-as.factor(train$Survived)
-test$Survived<-as.factor(test$Survived)
-forestmodel<-randomForest(model(i), data=train)
 
-rf.probs = predict(forestmodel, newdata = test)
-acc=sum(rf.probs==test$Survived)/nrow(test)
-print (acc)
-if (acc > accbest){
-  accbest=acc
-  ibest =i
-}
-importance(forestmodel)
+# Number of folds
+set.seed(1)
+tr.control = trainControl(method = "cv", number = 10)
+bestmtry<-vector()
+for (i in 6:8){
+    treeGrid = expand.grid( .mtry= seq(1,model(i)[[2]],1))
+    tr = train(model(i)[[1]], data = dataTrain, method = "rf", trControl = tr.control, tuneGrid = treeGrid)
+    tr
+    # Extract ntree
+    best.forest = tr$finalModel
+    prp(best.tree)
+    bestmtry[i]=tr$results$mtry[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
+    forestmodel<-randomForest(model(i)[[1]], data=dataTrain,importance=TRUE,mtry=bestmtry[i],ntree=2000)
+    varImpPlot(forestmodel)
+    print (paste("Model: ",i, "ntree= ",2000,"mtry= ",bestmtry[i],"Accuracy= ",max(tr$results$Accuracy),sep=" "))
 }
 
 #submit
-#train$Cabin<-factor(train$Cabin)
-dataTest$Cabin<-as.factor(dataTest$Cabin)
-levels(dataTest$Cabin)<-levels(train$Cabin)
-forestmodel<-randomForest(model(ibest), data=train)
+set.seed(1)
+forestmodel<-randomForest(model(7)[[1]], data=dataTrain,importance=TRUE,ntree=2000,mtry=5)
+varImpPlot(forestmodel)
+set.seed(1)
 rf.pred<-predict(forestmodel, newdata = dataTest)
 submission<-data.frame(dataTest$PassengerId,rf.pred)
 names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/rf3_f_impute.csv",sep=",",row.names=FALSE)
+write.table(submission,"./submissions/rf7n2000m5.csv",sep=",",row.names=FALSE)
 
-males<-read.csv("./submissions/rf3_m_impute.csv")
-females<-read.csv("./submissions/rf3_f_impute.csv")
+## Conditional Forest
 
-mf<-rbind(males,females)
-mf <- mf[order(mf$PassengerId),] 
-write.table(mf,"./submissions/rf3_mf_impute.csv",sep=",",row.names=FALSE)
-
-mean(mf$Survived)
-
-# SVM Model
-
-library(e1071)
-
-for (j in 1:5){
-#start()
-SVMmodel <- svm(model(j), data=train)
-svm.probs = predict(SVMmodel, newdata = test)
-svm.pred=rep(0,length(svm.probs))
-#svm.pred[svm.probs>0.5]=1
-print (sum(svm.pred==test$Survived)/nrow(test))
+#install.packages('party')
+# names(getModelInfo()) gives available train methods
+library(party)
+set.seed(1)
+tr.control = trainControl(method = "cv", number = 10)
+for (i in 6:8){
+    set.seed(1)
+    cGrid = expand.grid( .mtry= c(4,5,6))
+    tr = train(model(i)[[1]], data = dataTrain, method = "cforest", trControl = tr.control, tuneGrid = cGrid)
+    bestmtry=tr$results$mtry[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
+    print (paste("Model: ",i, "ntree= ",2000,"mtry= ",bestmtry,"Accuracy= ",max(tr$results$Accuracy),sep=" "))
 }
 
+set.seed(1)
+# used FamilySize, not FamilySize2 for best score
+# names(getModelInfo()) gives available train methods
+cmodel<-cforest(model(7)[[1]], data=train,controls=cforest_unbiased(ntree=2000, mtry=5))
+c.pred<-predict(cmodel, newdata = test,OOB=TRUE, type = "response")
+acc<-sum(c.pred==test$Survived)/nrow(test)
+acc
+
+# submission
+cmodel<-cforest(model(7)[[1]], data=dataTrain,controls=cforest_unbiased(ntree=2000, mtry=3))
+c.pred<-predict(cmodel, newdata = dataTest,OOB=TRUE, type = "response")
+submission<-data.frame(dataTest$PassengerId,c.pred)
+names(submission)<-c("PassengerId","Survived")
+write.table(submission,"./submissions/cf8_m5_n2000.csv",sep=",",row.names=FALSE)
+
+
+## SVM Model
+
+# Number of folds
+library(e1071)
+library(kernlab)
+ibest<-0
+costbest<-0
+accbest<-0
+gammabest<-0
+costs<-c(10,15,20,25,30,35,40,45,50,55,60)
+
+set.seed(2)
+tr.control = trainControl(method = "cv", number = 10)
+
+for (j in 8:8){
+    #start()
+    SVMGrid = expand.grid( .C=c(1000,1200,1400,1600),.sigma= c(0.001,0.003,0.01)/model(j)[[2]])
+    set.seed(2)
+    tr = train(model(j)[[1]], data = dataTrain, method = "svmRadial", trControl = tr.control, tuneGrid = SVMGrid)
+    print (tr$results)
+    bestaccuracy<-max(tr$results$Accuracy)
+    bestcost=tr$results$C[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
+    bestgamma=tr$results$sigma[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
+    print (paste("Model: ",j,"cost: ",bestcost,"gamma: ",round(bestgamma,6), "Accuracy: ",round(bestaccuracy,6),sep=" "))
+}
 
 #submit
 #dataTest$Survived=rep(0,length(nrow(dataTest)))
-SVMmodel <- svm(fol1, data=train)
-svm.probs = predict(SVMmodel, newdata = dataTest)
-svm.pred=rep(0,nrow(dataTest))
-svm.pred[svm.probs>0.5]=1
+set.seed(2)
+SVMmodel <- svm(model(8)[[1]], data=dataTrain,cost=1200,gamma=0.0011)
+svm.pred = predict(SVMmodel, newdata = dataTest)
+#acc<-sum(svm.pred==test$Survived)/nrow(test)
+#acc
 submission<-data.frame(dataTest$PassengerId,svm.pred)
 names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/svm1.csv",sep=",",row.names=FALSE)
+write.table(submission,"./submissions/svm8c1200g0011.csv",sep=",",row.names=FALSE)
 
+
+
+SVMmodel <- svm(model(7)[[1]], data=train,cost=bestcost,gamma=bestgamma)
+svm.pred = predict(SVMmodel, newdata = test)
+acc<-sum(svm.pred==test$Survived)/nrow(test)
+acc
