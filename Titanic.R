@@ -129,8 +129,8 @@ model<-function(x){
 md=list(8)  
 md[[1]]<-c(as.formula("as.factor(Survived)~Sex+Pclass"),2)
 md[[2]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare"),3)
-md[[3]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age"),4)
-md[[4]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+SibSp+Parch"),6) # Age na rows removed
+md[[3]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+FamilySize"),4)
+md[[4]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+FamilySize"),5) # Age na rows removed
 md[[5]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+Title +FamilyID2+FamilySize +Cabin"),8)
 md[[6]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID"),10)
 md[[7]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID+Cabin"),11)
@@ -198,7 +198,7 @@ library(caret)
 library(e1071)
 
 # Number of folds
-set.seed(2)
+set.seed(820)
 tr.control = trainControl(method = "cv", number = 10)
 #Test cp values from 0.002 to 0.1 in 0.002 increments
 cartGrid = expand.grid( .cp = seq(0.001,0.01,0.0001))
@@ -207,7 +207,7 @@ cartGrid = expand.grid( .cp = seq(0.001,0.01,0.0001))
 #start()
 bestCp<-vector()
 for (i in 1:8){
-    set.seed(2)
+    set.seed(820)
     tr = train(model(i)[[1]], data = dataTrain, method = "rpart", trControl = tr.control, tuneGrid = cartGrid)
     tr
     # Extract tree
@@ -215,7 +215,7 @@ for (i in 1:8){
     prp(best.tree)
     bestCp[i]=tr$results$cp[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
     print (paste("Model: ",i,"Cp: ",bestCp[i],"accuracy: ",max(tr$results$Accuracy),sep=" "))
-    set.seed(2)
+    set.seed(820)
     CARTcp = rpart(model(i)[[1]], data=dataTrain, method="class",cp=bestCp[i])
     prp(CARTcp)
     
@@ -229,7 +229,7 @@ for (i in 1:8){
 #         ibest =i
 #     }    
 }
-set.seed(2)
+set.seed(820)
 CARTcp = rpart(model(8)[[1]], data=dataTrain, method="class",cp=0.0082)
 prp(CARTcp)
 set.seed(2)
