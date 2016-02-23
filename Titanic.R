@@ -132,9 +132,10 @@ md[[2]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare"),3)
 md[[3]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+FamilySize"),4)
 md[[4]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+FamilySize"),5) # Age na rows removed
 md[[5]]<-c(as.formula("as.factor(Survived)~Sex+Pclass+Fare+Age+Title +FamilyID2+FamilySize +Cabin"),8)
-md[[6]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID"),10)
-md[[7]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID+Cabin"),11)
-md[[8]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age +Fare + Embarked + Title + FamilySize + FamilyID+Cabin"),9)
+md[[6]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID2"),10)
+md[[7]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID2+Cabin"),11)
+md[[8]]<-c(as.formula("as.factor(Survived) ~ Pclass + Sex + Age +Fare + Embarked + Title + FamilySize + FamilyID2+Cabin"),9)
+md[[9]]<-c(as.formula("Survived ~ Pclass + Sex + Age +Fare + Embarked + Title + FamilySize + FamilyID2+Cabin"),9)
 md[[x]]
 }
 
@@ -258,12 +259,69 @@ for (i in 6:8){
     best.forest = tr$finalModel
     prp(best.tree)
     bestmtry[i]=tr$results$mtry[which(tr$results$Accuracy==max(tr$results$Accuracy))][1]
-    forestmodel<-randomForest(model(i)[[1]], data=dataTrain,importance=TRUE,mtry=bestmtry[i],ntree=2000)
+    forestmodel<-randomForest(model(i)[[1]], data=dataTrain,importance=TRUE,mtry=bestmtry[i],ntree=500)
     varImpPlot(forestmodel)
     print (paste("Model: ",i, "ntree= ",2000,"mtry= ",bestmtry[i],"Accuracy= ",max(tr$results$Accuracy),sep=" "))
 }
 
-#submit
+##ISLR Ch code for RF
+
+train=sample(1:nrow(dataTrain),600)
+ndim=model(8)[[2]]
+ntrees=c(100,500,1000,2000)
+oob.acc=double(length(ntrees))
+test.acc=double(length(ntrees))
+for(i in 1:length(ntrees)){
+    fit=randomForest(model(8)[[1]],data=dataTrain,subset=train,mtry=2,ntree=ntrees[i])
+    oob.acc[i]=(1-fit$err.rate[ntrees[i]])
+    pred=predict(fit,dataTrain[-train,])
+    test.acc[i]=sum(pred==dataTrain[-train,]$Survived)/nrow(dataTrain[-train,])
+    cat(ntrees[i]," ")
+}
+matplot(ntrees,cbind(oob.acc,test.acc),pch=19,col=c("red","blue"),type="b",ylab="Accuracy")
+legend("topright",legend=c("OOB","Test"),pch=19,col=c("red","blue"))
+plot(1:length(fit$err.rate),fit$err.rate)
+
+## Boosting from ISLR
+
+# Boosting builds lots of smaller trees. Unlike random forests, each new
+# tree in boosting tries to patch up the deficiencies of the current 
+# ensemble.
+require(gbm)
+train=sample(1:nrow(dataTrain),600)
+boost.titanic=gbm(model(9)[[1]],data=dataTrain[train,],distribution="bernoulli",n.trees=10000,shrinkage=0.01,interaction.depth=4)
+summary(boost.titanic)
+plot(boost.titanic,i="Fare")
+plot(boost.titanic,i="Age")
+
+# Lets make a prediction on the test set. With boosting, the number of 
+# trees is a tuning parameter, and if we have too many we can overfit.
+# So we should use cross-validation to select the number of trees. 
+# We will leave this as an exercise. Instead, we will compute the test
+# error as a function of the number of trees, and make a plot.
+set.seed(567)
+n.trees=seq(from=100,to=10000,by=100)
+predmat=predict(boost.titanic,newdata=dataTrain[-train,],n.trees=n.trees,type="response")
+dim(predmat)
+predmat=ifelse(predmat>0.5,1,0)
+#berr=with(dataTrain[-train,],apply( (predmat-medv)^2,2,mean))
+test.acc=double(ncol(predmat))
+for (i in 1:ncol(predmat)){
+    test.acc[i]=sum(predmat[,i]==dataTrain[-train,]$Survived)/nrow(dataTrain[-train,])
+}
+plot(n.trees,test.acc,pch=19,ylab="Accuracy", xlab="# Trees",main="Boosting Test Error")
+#abline(h=min(test.err),col="red")
+
+# submit
+set.seed(567)
+boost.pred=predict(boost.titanic,newdata=dataTest,n.trees=2000,type="response")
+boost.pred=ifelse(boost.pred>0.5,1,0)
+submission<-data.frame(dataTest$PassengerId,boost.pred)
+names(submission)<-c("PassengerId","Survived")
+write.table(submission,"./submissions/boost9_n2000.csv",sep=",",row.names=FALSE)
+
+
+#submit  RF
 set.seed(1)
 forestmodel<-randomForest(model(7)[[1]], data=dataTrain,importance=TRUE,ntree=2000,mtry=5)
 varImpPlot(forestmodel)
