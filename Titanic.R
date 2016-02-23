@@ -264,7 +264,17 @@ for (i in 6:8){
     print (paste("Model: ",i, "ntree= ",2000,"mtry= ",bestmtry[i],"Accuracy= ",max(tr$results$Accuracy),sep=" "))
 }
 
-##ISLR Ch code for RF
+#submit  RF
+set.seed(1)
+forestmodel<-randomForest(model(7)[[1]], data=dataTrain,importance=TRUE,ntree=2000,mtry=5)
+varImpPlot(forestmodel)
+set.seed(1)
+rf.pred<-predict(forestmodel, newdata = dataTest)
+submission<-data.frame(dataTest$PassengerId,rf.pred)
+names(submission)<-c("PassengerId","Survived")
+write.table(submission,"./submissions/rf7n2000m5.csv",sep=",",row.names=FALSE)
+
+##ISLR Ch8 Trees code for RF
 
 train=sample(1:nrow(dataTrain),600)
 ndim=model(8)[[2]]
@@ -312,6 +322,23 @@ for (i in 1:ncol(predmat)){
 plot(n.trees,test.acc,pch=19,ylab="Accuracy", xlab="# Trees",main="Boosting Test Error")
 #abline(h=min(test.err),col="red")
 
+# fi nd best threshold
+require(gbm)
+set.seed(567)
+train=sample(1:nrow(dataTrain),600)
+boost.titanic=gbm(model(9)[[1]],data=dataTrain[train,],distribution="bernoulli",n.trees=2000,shrinkage=0.01,interaction.depth=4)
+thresholds=seq(0.1,1,0.1)
+set.seed(567)
+test.acc=double(10)
+for (i in 1:10){
+  boost.pred=predict(boost.titanic,newdata=dataTrain[-train,],n.trees=2000,type="response")
+  boost.pred=ifelse(boost.pred>thresholds[i],1,0)
+  test.acc[i]=sum(boost.pred==dataTrain[-train,]$Survived)/nrow(dataTrain[-train,])
+  
+}
+plot(thresholds,test.acc,pch=19,ylab="Accuracy", xlab="Threshold",main="Boosting Test Accuracy")
+
+
 # submit
 set.seed(567)
 boost.pred=predict(boost.titanic,newdata=dataTest,n.trees=2000,type="response")
@@ -321,15 +348,7 @@ names(submission)<-c("PassengerId","Survived")
 write.table(submission,"./submissions/boost9_n2000.csv",sep=",",row.names=FALSE)
 
 
-#submit  RF
-set.seed(1)
-forestmodel<-randomForest(model(7)[[1]], data=dataTrain,importance=TRUE,ntree=2000,mtry=5)
-varImpPlot(forestmodel)
-set.seed(1)
-rf.pred<-predict(forestmodel, newdata = dataTest)
-submission<-data.frame(dataTest$PassengerId,rf.pred)
-names(submission)<-c("PassengerId","Survived")
-write.table(submission,"./submissions/rf7n2000m5.csv",sep=",",row.names=FALSE)
+
 
 ## Conditional Forest
 
