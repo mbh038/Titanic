@@ -410,10 +410,23 @@ for (j in 8:8){
 #submit
 #dataTest$Survived=rep(0,length(nrow(dataTest)))
 set.seed(2)
-SVMmodel <- svm(model(8)[[1]], data=dataTrain,cost=1200,gamma=0.0011)
-svm.pred = predict(SVMmodel, newdata = dataTest)
-#acc<-sum(svm.pred==test$Survived)/nrow(test)
-#acc
+SVMmodel <- svm(model(8)[[1]], data=train,cost=8,gamma=200,epsilon=0.1)
+svm.pred = predict(SVMmodel, newdata = test)
+acc<-sum(svm.pred==test$Survived)/nrow(test)
+acc
+
+# perform a grid search
+tuneResult <- tune(svm, model(8)[[1]],  data = train,
+                   ranges = list(gamma = seq(0.1,1,.1),cost=10,epsilon=.0001)
+)
+print(tuneResult)
+plot(tuneResult)
+tunedModel <- tuneResult$best.model
+svm.pred = predict(SVMmodel, newdata = test)
+acc<-sum(svm.pred==test$Survived)/nrow(test)
+acc
+
+
 submission<-data.frame(dataTest$PassengerId,svm.pred)
 names(submission)<-c("PassengerId","Survived")
 write.table(submission,"./submissions/svm8c1200g0011.csv",sep=",",row.names=FALSE)
